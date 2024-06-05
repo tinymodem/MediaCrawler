@@ -25,7 +25,8 @@ async def launch_browser(chromium, playwright_proxy, user_agent, headless=True, 
             accept_downloads=True,
             headless=headless,
             proxy=playwright_proxy,  # type: ignore
-            viewport={"width": 700, "height": 932},
+            # 3:4
+            viewport={"width": 700, "height": 1033},
             device_scale_factor=4,
             user_agent=user_agent
         )
@@ -33,7 +34,7 @@ async def launch_browser(chromium, playwright_proxy, user_agent, headless=True, 
     else:
         browser = await chromium.launch(headless=headless, proxy=playwright_proxy)  # type: ignore
         browser_context = await browser.new_context(
-            viewport={"width": 700, "height": 932},
+            viewport={"width": 690, "height": 932},
             device_scale_factor=4,
             user_agent=user_agent
         )
@@ -49,6 +50,16 @@ async def main():
         await login_by_cookies(browser_context, cookie_str)
         page = await browser_context.new_page()
         await page.goto("https://www.zhihu.com/question/426489276/answer/1675707394")
+
+        # 使用 JavaScript 修改 --app-font-size 变量
+        await page.evaluate(f'''() => {{
+            document.documentElement.style.setProperty('--app-font-size', '30px');
+        }}''')
+
+        # 检查修改结果
+        font_size = await page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--app-font-size")')
+        print(f"Modified --app-font-size: {font_size}")
+
         
         # 获取页面高度
         page_height = await page.evaluate("document.body.scrollHeight")
@@ -56,14 +67,21 @@ async def main():
         print(f"page_height: {page_height}, viewport_height: {viewport_height}")
 
         # 定义每次滚动的步长（稍小于视口高度以保留重叠）
-        scroll_step = viewport_height - 200  # 保留100像素的重叠部分
+        scroll_step = viewport_height - 250  # 保留100像素的重叠部分
 
         # 初始化截图索引
         screenshot_index = 1
         Path("screenshot").mkdir(exist_ok=True)
+        # 定义截图区域
+        clip_area = {
+            'x': 20,  # 区域的起始点 x 坐标
+            'y': 50,  # 区域的起始点 y 坐标
+            'width': 670,  # 区域的宽度
+            'height': 933  # 区域的高度
+        }
         for offset in range(0, page_height, scroll_step):
             # 截取截图
-            await page.screenshot(path=Path("screenshot") / f"screenshot_{screenshot_index}.png", full_page=False)
+            await page.screenshot(path=Path("screenshot") / f"screenshot_{screenshot_index}.png", clip=clip_area)
             screenshot_index += 1
 
             # 滚动页面，但确保不超过页面底部
