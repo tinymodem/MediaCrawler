@@ -18,11 +18,17 @@ class XhsStoreFactory:
     }
 
     @staticmethod
-    def create_store() -> AbstractStore:
+    def create_store(**kwargs) -> AbstractStore:
         store_class = XhsStoreFactory.STORES.get(config.SAVE_DATA_OPTION)
         if not store_class:
             raise ValueError("[XhsStoreFactory.create_store] Invalid save option only supported csv or db or json ...")
+        if store_class == XhsCsvStoreImplement:
+            XhsCsvStoreImplement.set_keyword(**kwargs)
+        
         return store_class()
+
+
+STORE = XhsStoreFactory.create_store()
 
 
 async def update_xhs_note(note_item: Dict):
@@ -60,7 +66,7 @@ async def update_xhs_note(note_item: Dict):
         "note_url": f"https://www.xiaohongshu.com/explore/{note_id}"
     }
     utils.logger.info(f"[store.xhs.update_xhs_note] xhs note: {local_db_item}")
-    await XhsStoreFactory.create_store().store_content(local_db_item)
+    await STORE.store_content(local_db_item)
 
 
 async def batch_update_xhs_note_comments(note_id: str, comments: List[Dict]):
@@ -90,7 +96,7 @@ async def update_xhs_note_comment(note_id: str, comment_item: Dict):
         "last_modify_ts": utils.get_current_timestamp(),
     }
     utils.logger.info(f"[store.xhs.update_xhs_note_comment] xhs note comment:{local_db_item}")
-    await XhsStoreFactory.create_store().store_comment(local_db_item)
+    await STORE.store_comment(local_db_item)
 
 
 async def save_creator(user_id: str, creator: Dict):
@@ -122,4 +128,4 @@ async def save_creator(user_id: str, creator: Dict):
         "last_modify_ts": utils.get_current_timestamp(),
     }
     utils.logger.info(f"[store.xhs.save_creator] creator:{local_db_item}")
-    await XhsStoreFactory.create_store().store_creator(local_db_item)
+    await STORE.store_creator(local_db_item)

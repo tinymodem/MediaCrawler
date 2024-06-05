@@ -10,6 +10,7 @@ from media_platform.douyin import DouYinCrawler
 from media_platform.kuaishou import KuaishouCrawler
 from media_platform.weibo import WeiboCrawler
 from media_platform.xhs import XiaoHongShuCrawler
+from store.xhs import XhsStoreFactory
 
 
 class CrawlerFactory:
@@ -48,6 +49,7 @@ async def main():
         await db.init_db()
 
     args = parser.parse_args()
+    STORE = XhsStoreFactory.create_store(keyword=args.keywords)
     crawler = CrawlerFactory.create_crawler(platform=args.platform)
     crawler.init_config(
         platform=args.platform,
@@ -60,6 +62,29 @@ async def main():
     
     if config.SAVE_DATA_OPTION == "db":
         await db.close()
+
+
+async def crawl(
+        platform: str = config.PLATFORM,
+        lt: str = config.LOGIN_TYPE,
+        type: str = config.CRAWLER_TYPE,
+        start: int = config.START_PAGE,
+        keywords: str = config.KEYWORDS):
+    STORE = XhsStoreFactory.create_store(keyword=keywords)
+    crawler = CrawlerFactory.create_crawler(platform=platform)
+    crawler.init_config(
+        platform=platform,
+        login_type=lt,
+        crawler_type=type,
+        start_page=start,
+        keyword=keywords
+    )
+    await crawler.start()
+    
+    if config.SAVE_DATA_OPTION == "db":
+        await db.close()
+
+    return STORE.saved_file_names["contents"]
 
 
 if __name__ == '__main__':
