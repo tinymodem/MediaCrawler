@@ -34,22 +34,21 @@ async def launch_browser(chromium, playwright_proxy, user_agent, headless=True, 
     else:
         browser = await chromium.launch(headless=headless, proxy=playwright_proxy)  # type: ignore
         browser_context = await browser.new_context(
-            viewport={"width": 690, "height": 932},
+            viewport={"width": 700, "height": 1033},
             device_scale_factor=4,
             user_agent=user_agent
         )
         return browser_context
+    
 
-
-
-async def main():
+async def url_to_screenshots(url):
     async with async_playwright() as p:
         browser_context = await launch_browser(p.chromium, None, utils.get_user_agent(), headless=True, save_login_state=True)
         with open("cookies.txt", "r") as f:
             cookie_str = f.read()
         await login_by_cookies(browser_context, cookie_str)
         page = await browser_context.new_page()
-        await page.goto("https://www.zhihu.com/question/426489276/answer/1675707394")
+        await page.goto(url)
 
         # 使用 JavaScript 修改 --app-font-size 变量
         await page.evaluate(f'''() => {{
@@ -71,7 +70,9 @@ async def main():
 
         # 初始化截图索引
         screenshot_index = 1
-        Path("screenshot").mkdir(exist_ok=True)
+        output_dir = Path("output") / url.split("/")[-1]
+        print(f"Output directory: {output_dir}")
+        output_dir.mkdir(parents=True, exist_ok=True)
         # 定义截图区域
         clip_area = {
             'x': 20,  # 区域的起始点 x 坐标
@@ -79,11 +80,12 @@ async def main():
             'width': 670,  # 区域的宽度
             'height': 933  # 区域的高度
         }
+        # 控制截图到第一个回答结束。
         for offset in range(0, page_height, scroll_step):
+            screenshot_path = output_dir / f"{screenshot_index}.png"
             # 截取截图
-            await page.screenshot(path=Path("screenshot") / f"screenshot_{screenshot_index}.png", clip=clip_area)
+            await page.screenshot(path=screenshot_path, clip=clip_area)
             screenshot_index += 1
-
             # 滚动页面，但确保不超过页面底部
             next_offset = min(offset + scroll_step, page_height - viewport_height)
             await page.evaluate(f"window.scrollTo(0, {next_offset})")
@@ -99,4 +101,6 @@ async def main():
         
         await browser_context.close()
 
-asyncio.run(main())
+
+if __name__ == '__main__':
+    asyncio.run(url_to_screenshots("https://www.zhihu.com/question/426489276/answer/1675707394"))
