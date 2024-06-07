@@ -82,7 +82,8 @@ async def url_to_screenshots(url):
         }
         # 控制截图到第一个回答结束。
         for offset in range(0, page_height, scroll_step):
-            screenshot_path = output_dir / f"{screenshot_index}.png"
+            # to follow dictionary order.
+            screenshot_path = output_dir / f"{screenshot_index:02}.png"
             # 截取截图
             await page.screenshot(path=screenshot_path, clip=clip_area)
             screenshot_index += 1
@@ -102,5 +103,14 @@ async def url_to_screenshots(url):
         await browser_context.close()
 
 
+async def batch_url_to_screenshots(urls):
+    for url in urls:
+        print(f"Start crawling {url}")
+        await url_to_screenshots(url)
+
+
 if __name__ == '__main__':
-    asyncio.run(url_to_screenshots("https://www.zhihu.com/question/426489276/answer/1675707394"))
+    # asyncio.run(url_to_screenshots("https://www.zhihu.com/question/426489276/answer/1675707394"))
+    with open("urls.txt", "r") as f:
+        urls = f.read().split("\n")
+    asyncio.run(batch_url_to_screenshots(urls))
