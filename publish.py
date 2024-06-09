@@ -3,7 +3,7 @@ from pathlib import Path
 import json
 import zipfile
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from zhihu_postprocess import ocr
 
 
@@ -12,12 +12,12 @@ def publish(
         content,
         tags,
         images,
+        publishTime,
         platform="xhs",
         account="baby",
-        publishTime=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         isPublic=False,
         url="http://123.116.117.39:1681/api/publish"):
-    postData = {
+    post_data = {
         'title': title,
         'content': content,
         'tags': ','.join(tags),
@@ -29,7 +29,8 @@ def publish(
     }
 
     try:
-        response = requests.post(url, data=postData)
+        print(f"posting data: {post_data}")
+        response = requests.post(url, data=post_data)
         response.raise_for_status()  # Raise an error for bad status codes
         print('Article published successfully!')
     except requests.exceptions.RequestException as error:
@@ -37,22 +38,20 @@ def publish(
     return response.json()
 
 
-def get_first_text(screenshot_path):
-    try:
-        return json.loads(ocr(screenshot_path / "01.png"))["result"][0][1][0]
-    except:
-        return ""
-
-
-def publish_one_note(screenshot_path):
-    first_text = get_first_text(screenshot_path)
+def publish_one_note(text, screenshot_path):
+    cst_cn_offset = timezone(timedelta(hours=8))
+    # Get the current UTC time
+    current_time_utc = datetime.now(timezone.utc)
+    current_time_cst_cn = current_time_utc.replace(tzinfo=timezone.utc).astimezone(cst_cn_offset)
     publish(
-        title=first_text,
-        content=first_text,
-        tags=",".join(["育儿"]),
-        images=",".join([str(p) for p in screenshot_path.glob("*.png")])
+        title=text,
+        content=text,
+        tags=["育儿", "育儿知识"],
+        images=[str(p) for p in screenshot_path.glob("*.png")],
+        publishTime=current_time_cst_cn.strftime('%Y-%m-%dT%H:%M:%S')
     )
 
 
 if __name__ == '__main__':
-    publish_one_note(Path("./output/2193454318"))
+    text = "到底应该如何培养一个优秀的小孩？"
+    publish_one_note(text, Path("./output/2193454318"))
