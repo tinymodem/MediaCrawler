@@ -167,5 +167,7 @@ cython_debug/
 /data/
 /cache
 output
+truncated
+out/*
 
 */.DS_Store
