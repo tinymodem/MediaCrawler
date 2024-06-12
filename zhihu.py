@@ -3,6 +3,7 @@ from playwright.async_api import async_playwright
 from tools import utils
 import os
 from pathlib import Path
+import argparse
 
 async def login_by_cookies(browser_context, cookie_str):
     for key, value in utils.convert_str_cookie_to_dict(cookie_str).items():
@@ -41,7 +42,7 @@ async def launch_browser(chromium, playwright_proxy, user_agent, headless=True, 
         return browser_context
     
 
-async def url_to_screenshots(url):
+async def url_to_screenshots(url, url_file_name=""):
     async with async_playwright() as p:
         browser_context = await launch_browser(p.chromium, None, utils.get_user_agent(), headless=True, save_login_state=True)
         with open("cookies.txt", "r") as f:
@@ -70,7 +71,7 @@ async def url_to_screenshots(url):
 
         # 初始化截图索引
         screenshot_index = 1
-        output_dir = Path("output") / url.split("/")[-1]
+        output_dir = Path("output") / f'{url_file_name}_{url.split("/")[-1]}'
         print(f"Output directory: {output_dir}")
         output_dir.mkdir(parents=True, exist_ok=True)
         # 定义截图区域
@@ -103,14 +104,17 @@ async def url_to_screenshots(url):
         await browser_context.close()
 
 
-async def batch_url_to_screenshots(urls):
+async def batch_url_to_screenshots(urls, url_file_name=""):
     for url in urls:
         print(f"Start crawling {url}")
-        await url_to_screenshots(url)
+        await url_to_screenshots(url, url_file_name)
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--url_file", "-i", help="File containing urls to crawl")
+    args = parser.parse_args()
     # asyncio.run(url_to_screenshots("https://www.zhihu.com/question/426489276/answer/1675707394"))
-    with open("urls.txt", "r") as f:
+    with open(args.url_file, "r") as f:
         urls = f.read().split("\n")
-    asyncio.run(batch_url_to_screenshots(urls))
+    asyncio.run(batch_url_to_screenshots(urls, url_file_name=Path(args.url_file).stem))
