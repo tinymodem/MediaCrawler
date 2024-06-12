@@ -68,6 +68,7 @@ async def url_to_screenshots(url, url_file_name=""):
                 response = await request.response()
                 if response:
                     print(f"Response status: {response.status}")
+                    # Response status: 403 Response body: {"error":{"message":"请求参数异常，请升级客户端后重试。","code":10003}}
                     if response.status == 403:
                         # 抓取响应体以了解更多信息
                         body = await response.text()
