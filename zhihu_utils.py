@@ -1,21 +1,25 @@
-from tools import utils
 import os
+import zipfile
+import shutil
 
 # Config
-WEB_SOCKET_DEBUGGER_URL = "ws://localhost:9222/devtools/browser/ef5f8d38-b1a3-427e-9e5f-cb0b5f9d8715"
-VIEWPORT = {"width": 700, "height": 1033}
+WEB_SOCKET_DEBUGGER_URL = "ws://localhost:9222/devtools/browser/51c1de44-dc33-4e58-ba5c-8bc45236db18"
+VIEWPORT = {"width": 700, "height": 1013}
+START_X = 20
 DEVICE_SCALE_FACTOR = 4
 FONT_SIZE = "30px"
 ANSWER_CLIP_AREA = {
-    'x': 20,  # 区域的起始点 x 坐标
-    'y': 50,  # 区域的起始点 y 坐标
+    'x': 0,  # 区域的起始点 x 坐标
+    'y': 70,  # 区域的起始点 y 坐标
     'width': 670,  # 区域的宽度
-    'height': 933  # 区域的高度
+    'height': 883  # 区域的高度
 }
 # TOPIC_CLIP_AREA
 
 
 async def login_by_cookies(browser_context, cookie_str):
+    from tools import utils
+
     for key, value in utils.convert_str_cookie_to_dict(cookie_str).items():
         await browser_context.add_cookies([{
             'name': key,
@@ -59,7 +63,8 @@ async def connect_existing_browser(chromium):
     # 获取现有页面并设置视口
     page = browser_context.pages[0]
     await page.set_viewport_size(VIEWPORT)
-    await page.emulate_media({'deviceScaleFactor': DEVICE_SCALE_FACTOR})
+    # await page.evaluate(f"window.devicePixelRatio = {DEVICE_SCALE_FACTOR}")
+    # await page.emulate_media({'deviceScaleFactor': DEVICE_SCALE_FACTOR})
     return browser_context
 
 
@@ -73,54 +78,89 @@ async def modify_font(page):
     # print(f"Modified --app-font-size: {font_size}")
 
 
-async def scroll_and_screenshot(page, output_dir, url_type="answer", prefix="answer"):
-    # url_type: "answer" or "topic"
-    # prefix: "answer" or "comment"
-    # 获取页面高度
-    page_height = await page.evaluate("document.body.scrollHeight")
-    viewport_height = await page.evaluate("window.innerHeight")
-    print(f"page_height: {page_height}, viewport_height: {viewport_height}")
-
-    # 定义每次滚动的步长（稍小于视口高度以保留重叠）
-    scroll_step = viewport_height - 250  # 保留100像素的重叠部分
-
-    # 初始化截图索引
-    screenshot_index = 1
-    output_dir.mkdir(parents=True, exist_ok=True)
-    # 定义截图区域
-    clip_area = ANSWER_CLIP_AREA if url_type == "answer" else None
-    # TODO: 控制截图到第一个回答结束。
-    for offset in range(0, page_height, scroll_step):
-        # to follow dictionary order.
-        screenshot_path = output_dir / f"{prefix}_{screenshot_index:02}.png"
-        # 截取截图
-        await page.screenshot(path=screenshot_path, clip=clip_area)
-        screenshot_index += 1
-        # 滚动页面，但确保不超过页面底部
-        next_offset = min(offset + scroll_step, page_height - viewport_height)
-        await page.evaluate(f"window.scrollTo(0, {next_offset})")
-
-
 async def open_comment(page):
+    # 滚动到 "更多回答" 附近
+    # print('Scrolling to the "更多回答" section...')
+    more_answers_header = page.locator('h4.List-headerText:has-text("更多回答")')
+    await more_answers_header.scroll_into_view_if_needed()
+    await page.wait_for_timeout(1000)  # 等待0.5秒
     # 使用更精确的 CSS 选择器定位所有包含“条评论”的按钮
     await page.wait_for_selector('button:has-text("条评论")')
     comment_buttons = page.locator('button:has-text("条评论")')
     
     # 获取按钮数量以便调试
     count = await comment_buttons.count()
-    print(f"Found {count} comment buttons.")
+    # print(f"Found {count} comment buttons.")
 
     if count < 2:
         print("Less than 2 comment buttons found. Exiting.")
         return
 
     # 模拟鼠标移动到按钮并点击
-    print("Hovering over the second comment button...")
+    # print("Hovering over the second comment button...")
     button = comment_buttons.nth(1)
     await button.hover()
     await page.wait_for_timeout(500)  # 等待0.5秒
 
-    print("Clicking the second comment button...")
+    # print("Clicking the second comment button...")
     await button.click()
-    print("Second comment button clicked.")
+    # print("Second comment button clicked.")
     await page.wait_for_selector('.CommentContent', timeout=10000)  # 等待评论内容出现，超时时间为10秒
+
+
+async def scroll_and_screenshot(page, output_dir, url_type="answer"):
+    # url_type: "answer" or "topic"
+    
+    # 获取视口高度
+    viewport_height = await page.evaluate("window.innerHeight")
+    # print(f"viewport_height: {viewport_height}")
+    
+    # 定义每次滚动的步长（稍小于视口高度以保留重叠）
+    scroll_step = viewport_height - 200
+    
+    # 初始化截图索引
+    screenshot_index = 1
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 定义截图区域
+    clip_area = ANSWER_CLIP_AREA if url_type == "answer" else None
+    
+    # 获取 "更多回答" 元素的位置
+    # print('Calculating height from top of the page to the "更多回答" section...')
+    more_answers_header_locator = page.locator('h4.List-headerText:has-text("更多回答")')
+    more_answers_header_position = int(await more_answers_header_locator.evaluate(
+        'element => element.getBoundingClientRect().top + window.scrollY'
+    ))
+    # print(f'The height from the top of the page to the "更多回答" section is: {more_answers_header_position}px.')
+    
+    # 滚动到页面顶部
+    await page.evaluate(f"window.scrollTo({START_X}, 0)")
+
+    # 截图并滚动到 "更多回答" 附近
+    for offset in range(0, more_answers_header_position, scroll_step):
+        # to follow dictionary order.
+        screenshot_path = output_dir / f"{screenshot_index:02}.png"
+        
+        # 截取截图
+        await page.screenshot(path=screenshot_path, clip=clip_area)
+        screenshot_index += 1
+        
+        # 滚动页面，但确保不超过 "更多回答" 元素的位置
+        if (offset + scroll_step) > (more_answers_header_position - viewport_height - 20):
+            break
+
+        await page.evaluate(f"window.scrollTo({START_X}, {offset + scroll_step})")
+
+
+def make_zip(screenshots_dir, zip_dir):
+    # Create a zip file of all png files in the current directory
+    zip_file_name = f'{screenshots_dir.name}.zip'
+    with zipfile.ZipFile(screenshots_dir / zip_file_name, 'w') as zipf:
+        for file_path in screenshots_dir.glob('*.png'):
+            # print(f"Adding {file_path} to zip file...")
+            zipf.write(file_path, file_path.name)
+    # print(f"All PNG files have been added to {zip_file_name}")
+    # Ensure the output/zip directory exists
+    zip_dir.mkdir(parents=True, exist_ok=True)
+    # Move the zip file to the output/zip directory
+    shutil.move(str(screenshots_dir / zip_file_name), str(zip_dir / zip_file_name))
