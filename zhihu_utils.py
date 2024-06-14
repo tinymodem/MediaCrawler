@@ -5,7 +5,8 @@ import shutil
 # Config
 WEB_SOCKET_DEBUGGER_URL = "ws://localhost:9222/devtools/browser/51c1de44-dc33-4e58-ba5c-8bc45236db18"
 VIEWPORT = {"width": 1000, "height": 1013}
-FONT_SIZE = "30px"
+BODY_FONT_SIZE = "30px"
+COMMENT_FONT_SIZE = "20px"
 ANSWER_CLIP_AREA = {
     'x': 20,  # 区域的起始点 x 坐标
     'y': 70,  # 区域的起始点 y 坐标
@@ -68,13 +69,27 @@ async def connect_existing_browser(chromium):
 
 
 async def modify_font(page):
+    # 1. for url type "answer"
     # 使用 JavaScript 修改 --app-font-size 变量
     await page.evaluate(f'''() => {{
-        document.documentElement.style.setProperty('--app-font-size', '{FONT_SIZE}');
+        document.documentElement.style.setProperty('--app-font-size', '{BODY_FONT_SIZE}');
     }}''')
     # # 检查修改结果
     # font_size = await page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--app-font-size")')
     # print(f"Modified --app-font-size: {font_size}")
+    # 2. for url type "topic"
+    # 使用 JavaScript 修改 .css-jflero 类的样式
+    await page.evaluate(f"""
+        const style = document.createElement('style');
+        style.innerHTML = '.css-jflero {{ font-size: {BODY_FONT_SIZE} !important; }}';
+        document.head.appendChild(style);
+    """)
+    # 3. for comment
+    # 定位所有要修改的元素
+    elements = await page.locator('.CommentContent.css-1jpzztt').all()
+    # 遍历每个元素并修改字体大小
+    for element in elements:
+        await element.evaluate(f'element => element.style.fontSize = "{COMMENT_FONT_SIZE}"')
 
 
 async def open_comment(page):
@@ -143,14 +158,14 @@ async def scroll_and_screenshot(page, output_dir, url_type="answer"):
     clip_area = get_clip_area(url_type)
     # 滚动到页面顶部
     await page.evaluate(f"window.scrollTo(0, 0)")
-
-    # 截图并滚动到 "更多回答" 附近
     for offset in range(0, end_position - viewport_height, scroll_step):
         # to follow dictionary order.
         screenshot_path = output_dir / f"{screenshot_index:02}.png"
-        
         # 截取截图
         await page.screenshot(path=screenshot_path, clip=clip_area)
+        # 截图计数，不能超过18张
+        if screenshot_index == 18:
+            break
         screenshot_index += 1
         await page.evaluate(f"window.scrollTo(0, {offset + scroll_step})")
 
