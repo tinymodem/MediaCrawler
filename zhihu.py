@@ -4,7 +4,7 @@ from playwright.async_api import async_playwright
 from pathlib import Path
 import argparse
 from zhihu_utils import (launch_browser, connect_existing_browser, login_by_cookies,
-modify_font, scroll_and_screenshot, open_comment, make_zip)
+modify_font, scroll_and_screenshot, open_comment, make_zip, get_url_type)
 
 
 async def process_one_url(url, output_dir, init_browser_mode="connect"):
@@ -26,13 +26,14 @@ async def process_one_url(url, output_dir, init_browser_mode="connect"):
             raise ValueError(f"Invalid init_browser_mode: {init_browser_mode}")
         
         await page.goto(url)
+        url_type = get_url_type(url)
         # print(f'Before opening comment, page height {await page.evaluate("document.body.scrollHeight")}')
         # await scroll_and_screenshot(page, output_dir)
-        if init_browser_mode == "connect":
+        if init_browser_mode == "connect" and url_type == "answer":
             await open_comment(page)
         await modify_font(page)
         # print(f'After opening comment, page height {await page.evaluate("document.body.scrollHeight")}')
-        await scroll_and_screenshot(page, output_dir)
+        await scroll_and_screenshot(page, output_dir, url_type)
         make_zip(output_dir, output_dir.parent / "zip")
         await browser_context.close()
 
@@ -49,7 +50,7 @@ async def process_url_file(input_file, output_dir):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--url_file", "-i", help="File containing urls to crawl")
+    parser.add_argument("--url_file", "-i", required=True, help="File containing urls to crawl")
     parser.add_argument("--output_dir", "-o", default="output", help="Output directory")
     args = parser.parse_args()
     asyncio.run(process_url_file(args.url_file, Path(args.output_dir)))
