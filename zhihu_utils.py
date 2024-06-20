@@ -4,17 +4,21 @@ import shutil
 
 # Config
 WEB_SOCKET_DEBUGGER_URL = "ws://localhost:9222/devtools/browser/51c1de44-dc33-4e58-ba5c-8bc45236db18"
-VIEWPORT = {"width": 700, "height": 1013}
-START_X = 20
-DEVICE_SCALE_FACTOR = 4
-FONT_SIZE = "30px"
+VIEWPORT = {"width": 1000, "height": 1013}
+BODY_FONT_SIZE = "30px"
+COMMENT_FONT_SIZE = "20px"
 ANSWER_CLIP_AREA = {
-    'x': 0,  # 区域的起始点 x 坐标
+    'x': 20,  # 区域的起始点 x 坐标
     'y': 70,  # 区域的起始点 y 坐标
     'width': 670,  # 区域的宽度
     'height': 883  # 区域的高度
 }
-# TOPIC_CLIP_AREA
+TOPIC_CLIP_AREA = {
+    'x': 155,  # 区域的起始点 x 坐标
+    'y': 70,  # 区域的起始点 y 坐标
+    'width': 690,  # 区域的宽度
+    'height': 885  # 区域的高度
+}
 
 
 async def login_by_cookies(browser_context, cookie_str):
@@ -42,7 +46,6 @@ async def launch_browser(chromium, playwright_proxy, user_agent, headless=True, 
             proxy=playwright_proxy,  # type: ignore
             # 3:4
             viewport=VIEWPORT,
-            device_scale_factor=DEVICE_SCALE_FACTOR,
             user_agent=user_agent
         )
         return browser_context
@@ -50,7 +53,6 @@ async def launch_browser(chromium, playwright_proxy, user_agent, headless=True, 
         browser = await chromium.launch(headless=headless, proxy=playwright_proxy)  # type: ignore
         browser_context = await browser.new_context(
             viewport=VIEWPORT,
-            device_scale_factor=DEVICE_SCALE_FACTOR,
             user_agent=user_agent
         )
         return browser_context
@@ -63,19 +65,31 @@ async def connect_existing_browser(chromium):
     # 获取现有页面并设置视口
     page = browser_context.pages[0]
     await page.set_viewport_size(VIEWPORT)
-    # await page.evaluate(f"window.devicePixelRatio = {DEVICE_SCALE_FACTOR}")
-    # await page.emulate_media({'deviceScaleFactor': DEVICE_SCALE_FACTOR})
     return browser_context
 
 
 async def modify_font(page):
+    # 1. for url type "answer"
     # 使用 JavaScript 修改 --app-font-size 变量
     await page.evaluate(f'''() => {{
-        document.documentElement.style.setProperty('--app-font-size', '{FONT_SIZE}');
+        document.documentElement.style.setProperty('--app-font-size', '{BODY_FONT_SIZE}');
     }}''')
     # # 检查修改结果
     # font_size = await page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--app-font-size")')
     # print(f"Modified --app-font-size: {font_size}")
+    # 2. for url type "topic"
+    # 使用 JavaScript 修改 .css-jflero 类的样式
+    await page.evaluate(f"""
+        const style = document.createElement('style');
+        style.innerHTML = '.css-jflero {{ font-size: {BODY_FONT_SIZE} !important; }}';
+        document.head.appendChild(style);
+    """)
+    # 3. for comment
+    # 定位所有要修改的元素
+    elements = await page.locator('.CommentContent.css-1jpzztt').all()
+    # 遍历每个元素并修改字体大小
+    for element in elements:
+        await element.evaluate(f'element => element.style.fontSize = "{COMMENT_FONT_SIZE}"')
 
 
 async def open_comment(page):
@@ -83,7 +97,7 @@ async def open_comment(page):
     # print('Scrolling to the "更多回答" section...')
     more_answers_header = page.locator('h4.List-headerText:has-text("更多回答")')
     await more_answers_header.scroll_into_view_if_needed()
-    await page.wait_for_timeout(1000)  # 等待0.5秒
+    await page.wait_for_timeout(500)  # 等待0.5秒
     # 使用更精确的 CSS 选择器定位所有包含“条评论”的按钮
     await page.wait_for_selector('button:has-text("条评论")')
     comment_buttons = page.locator('button:has-text("条评论")')
@@ -108,6 +122,25 @@ async def open_comment(page):
     await page.wait_for_selector('.CommentContent', timeout=10000)  # 等待评论内容出现，超时时间为10秒
 
 
+async def get_end_position(page, url_type):
+    if url_type == "answer":
+        # 获取 "更多回答" 元素的位置
+        # print('Calculating height from top of the page to the "更多回答" section...')
+        more_answers_header_locator = page.locator('h4.List-headerText:has-text("更多回答")')
+        more_answers_header_position = int(await more_answers_header_locator.evaluate(
+            'element => element.getBoundingClientRect().top + window.scrollY'
+        ))
+        # print(f'The height from the top of the page to the "更多回答" section is: {more_answers_header_position}px.')
+        return more_answers_header_position - 20
+    elif url_type == "topic":
+        # 获取 "推荐阅读" 元素的位置
+        recommendations_header_locator = page.locator('h3.BlockTitle.Recommendations-BlockTitle:has-text("推荐阅读")')        
+        recommendations_header_position = int(await recommendations_header_locator.evaluate(
+            'element => element.getBoundingClientRect().top + window.scrollY'
+        ))
+        # print(f'The height from the top of the page to the "推荐阅读" section is: {recommendations_header_position}px.')
+        return recommendations_header_position - 30
+
 async def scroll_and_screenshot(page, output_dir, url_type="answer"):
     # url_type: "answer" or "topic"
     
@@ -121,35 +154,20 @@ async def scroll_and_screenshot(page, output_dir, url_type="answer"):
     # 初始化截图索引
     screenshot_index = 1
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # 定义截图区域
-    clip_area = ANSWER_CLIP_AREA if url_type == "answer" else None
-    
-    # 获取 "更多回答" 元素的位置
-    # print('Calculating height from top of the page to the "更多回答" section...')
-    more_answers_header_locator = page.locator('h4.List-headerText:has-text("更多回答")')
-    more_answers_header_position = int(await more_answers_header_locator.evaluate(
-        'element => element.getBoundingClientRect().top + window.scrollY'
-    ))
-    # print(f'The height from the top of the page to the "更多回答" section is: {more_answers_header_position}px.')
-    
+    end_position = await get_end_position(page, url_type)
+    clip_area = get_clip_area(url_type)
     # 滚动到页面顶部
-    await page.evaluate(f"window.scrollTo({START_X}, 0)")
-
-    # 截图并滚动到 "更多回答" 附近
-    for offset in range(0, more_answers_header_position, scroll_step):
+    await page.evaluate(f"window.scrollTo(0, 0)")
+    for offset in range(0, end_position - viewport_height, scroll_step):
         # to follow dictionary order.
         screenshot_path = output_dir / f"{screenshot_index:02}.png"
-        
         # 截取截图
         await page.screenshot(path=screenshot_path, clip=clip_area)
-        screenshot_index += 1
-        
-        # 滚动页面，但确保不超过 "更多回答" 元素的位置
-        if (offset + scroll_step) > (more_answers_header_position - viewport_height - 20):
+        # 截图计数，不能超过18张
+        if screenshot_index == 18:
             break
-
-        await page.evaluate(f"window.scrollTo({START_X}, {offset + scroll_step})")
+        screenshot_index += 1
+        await page.evaluate(f"window.scrollTo(0, {offset + scroll_step})")
 
 
 def make_zip(screenshots_dir, zip_dir):
@@ -164,3 +182,23 @@ def make_zip(screenshots_dir, zip_dir):
     zip_dir.mkdir(parents=True, exist_ok=True)
     # Move the zip file to the output/zip directory
     shutil.move(str(screenshots_dir / zip_file_name), str(zip_dir / zip_file_name))
+
+
+def get_url_type(url):
+    if "zhuanlan.zhihu.com/p/" in url:
+        return "topic"
+    elif "www.zhihu.com/question/" in url and "answer" in url:
+        return "answer"
+    else:
+        return "unknown"
+
+
+def get_clip_area(url_type):
+    # 定义截图区域
+    if url_type == "answer":
+        clip_area = ANSWER_CLIP_AREA
+    elif url_type == "topic":
+        clip_area = TOPIC_CLIP_AREA
+    else:
+        clip_area = None
+    return clip_area
